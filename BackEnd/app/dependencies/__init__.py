@@ -7,6 +7,7 @@ REQUIRED_PACKAGES = [
     "flask-sqlalchemy",
     "cryptography",
     "pymysql",  # Para MySQL
+    "flask-jwt-extended"
 ]
 
 def install_missing_packages():
