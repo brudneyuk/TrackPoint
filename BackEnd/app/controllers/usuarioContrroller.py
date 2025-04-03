@@ -1,6 +1,8 @@
+from datetime import datetime
+
 from flask import Blueprint, jsonify, request
 
-from app.services.usuarioService import criar_usuario, buscar_usuarios, buscar_usuario_por_email
+from app.services.usuarioService import criar_usuario, buscar_usuarios, buscar_usuario_por_email, buscar_usuario_por_id, atualizar_usuario_por_email
 
 usuario_bp = Blueprint('usuario_bp', __name__)
 
@@ -38,6 +40,7 @@ def criar():
 @usuario_bp.route("/usuarios", methods=["GET"])
 def listar():
     usuarios = buscar_usuarios()
+
     return jsonify([
         {
             "nome": u.nome,
@@ -46,32 +49,95 @@ def listar():
             "logado": u.logado,
             "data_criacao": u.data_criacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_criacao else None,
             "data_atualizacao": u.data_atualizacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_atualizacao else None,
-            "data_ultimo_login": u.data_ultimo_login.strftime("%d/%m/%Y %H:%M:%S") if not u.logado else None
+            **({"data_ultimo_login": u.data_ultimo_login.strftime("%d/%m/%Y %H:%M:%S")} if u.data_ultimo_login and not u.logado else {})
         }
         for u in usuarios
     ])
 
-# @usuario_bp.route("/usuarios/listar-nome-ou-email", methods=["GET"])
-# def listar_por_nome_ou_email():
-#     nome = request.args.get("nome")
-#     email = request.args.get("email")
-#
-#     if not nome and not email:
-#         return jsonify({"error": "Nome ou e-mail devem ser fornecidos"}), 400
-#
-#     usuarios = buscar_usuarios()
-#     usuarios_filtrados = [
-#         {
-#             "nome": u.nome,
-#             "email": u.email,
-#             "cargo": u.cargo.value,
-#             "logado": u.logado,
-#             "data_criacao": u.data_criacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_criacao else None,
-#             "data_atualizacao": u.data_atualizacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_atualizacao else None,
-#             "data_ultimo_login": u.data_ultimo_login.strftime("%d/%m/%Y %H:%M:%S") if not u.logado else None
-#         }
-#         for u in usuarios
-#         if (nome and nome.lower() in u.nome.lower()) or (email and email.lower() in u.email.lower())
-#     ]
-#
-#     return jsonify(usuarios_filtrados)
+@usuario_bp.route("/usuarios/listar-nome-ou-email", methods=["GET"])
+def listar_por_nome_ou_email():
+    nome = request.args.get("nome")
+    email = request.args.get("email")
+
+    if not nome and not email:
+        return jsonify({"error": "Nome ou e-mail devem ser fornecidos"}), 400
+
+    usuarios = buscar_usuarios() or []
+
+    usuarios_filtrados = [
+        {
+            "nome": u.nome,
+            "email": u.email,
+            "cargo": u.cargo.value,
+            "logado": u.logado,
+            "data_criacao": u.data_criacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_criacao else None,
+            "data_atualizacao": u.data_atualizacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_atualizacao else None,
+            "data_ultimo_login": u.data_ultimo_login.strftime("%d/%m/%Y %H:%M:%S") if not u.logado else None
+        }
+        for u in usuarios
+        if (nome and u.nome and nome.lower() in u.nome.lower()) or (email and u.email and email.lower() in u.email.lower())
+    ]
+
+    # Se a lista estiver vazia, retorna um erro 404
+    if not usuarios_filtrados:
+        return jsonify({"error": "Nenhum usuário encontrado com o nome ou e-mail informado."}), 404
+
+    return jsonify(usuarios_filtrados)
+
+
+from datetime import datetime
+from config.database import db
+
+
+@usuario_bp.route("/usuarios/login", methods=["POST"])
+def login():
+    dados = request.json
+    email = dados.get("email")
+    senha = dados.get("senha")
+
+    usuario = buscar_usuario_por_email(email)
+    if not usuario or not usuario.check_senha(senha):
+        return jsonify({"error": "E-mail ou senha inválidos"}), 401
+
+    usuario.logado = True
+    usuario.data_ultimo_login = datetime.utcnow()
+
+    try:
+        db.session.commit()  # Salva as alterações no banco
+        return jsonify({"message": "Login realizado com sucesso!"}), 200
+    except Exception as e:
+        db.session.rollback()  # Desfaz em caso de erro
+        return jsonify({"error": str(e)}), 500
+
+
+@usuario_bp.route("/usuarios/logout", methods=["POST"])
+def logout():
+    dados = request.json
+    email = dados.get("email")
+
+    usuario = buscar_usuario_por_email(email)
+    if not usuario:
+        return jsonify({"error": "Usuário não encontrado"}), 404
+
+    usuario.logado = False  # Define como deslogado
+    db.session.commit()  # Salva as alterações no banco
+
+    return jsonify({"message": "Logout realizado com sucesso"}), 200
+
+@usuario_bp.route("/usuarios/atualizar", methods=["PATCH"])
+def atualizar_usuario():
+    dados = request.json
+    email = dados.get("email")
+
+    if not email:
+        return jsonify({"error": "E-mail é obrigatório"}), 400
+
+    dados["data_atualizacao"] = datetime.utcnow()
+    response, status = atualizar_usuario_por_email(email, dados)
+
+    if status == 200:
+        db.session.commit()
+        return jsonify({"message": "Usuário atualizado com sucesso!"}), 200
+    else:
+        return jsonify(response), status
+
