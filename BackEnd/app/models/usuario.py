@@ -14,6 +14,7 @@ class Usuario(db.Model):
     data_criacao = db.Column(db.DateTime, default=db.func.current_timestamp())
     data_atualizacao = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
     data_ultimo_login = db.Column(db.DateTime, default=db.func.current_timestamp())
+    ativo = db.Column(db.Enum('Ativo', 'Inativo'), default='Ativo')
 
     def set_senha(self, senha):
         if len(senha) < 6:

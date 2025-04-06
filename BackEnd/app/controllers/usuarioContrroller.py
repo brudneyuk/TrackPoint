@@ -1,8 +1,11 @@
-from datetime import datetime
-
 from flask import Blueprint, jsonify, request
 
-from app.services.usuarioService import criar_usuario, buscar_usuarios, buscar_usuario_por_email, buscar_usuario_por_id, atualizar_usuario_por_email
+from app.services.usuarioService import criar_usuario, buscar_usuarios, buscar_usuario_por_email, \
+    atualizar_usuario_por_email
+from flask import Blueprint, jsonify, request
+
+from app.services.usuarioService import criar_usuario, buscar_usuarios, buscar_usuario_por_email, \
+    atualizar_usuario_por_email
 
 usuario_bp = Blueprint('usuario_bp', __name__)
 
@@ -37,22 +40,44 @@ def criar():
         return jsonify({"error": str(e)}), 400  # Retorna erro caso algo dê errado
 
 
-@usuario_bp.route("/usuarios", methods=["GET"])
-def listar():
+@usuario_bp.route("/usuarios/ativos", methods=["GET"])
+def listar_ativos():
     usuarios = buscar_usuarios()
+    usuarios_ativos = [u for u in usuarios if u.ativo == "Ativo"]
 
     return jsonify([
         {
             "nome": u.nome,
             "email": u.email,
-            "cargo": u.cargo.value,  # Certificando-se de retornar a string do Enum Cargo
+            "cargo": u.cargo.value,
+            "ativo": u.ativo,
             "logado": u.logado,
             "data_criacao": u.data_criacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_criacao else None,
             "data_atualizacao": u.data_atualizacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_atualizacao else None,
             **({"data_ultimo_login": u.data_ultimo_login.strftime("%d/%m/%Y %H:%M:%S")} if u.data_ultimo_login and not u.logado else {})
         }
-        for u in usuarios
+        for u in usuarios_ativos
     ])
+
+@usuario_bp.route("/usuarios/inativos", methods=["GET"])
+def listar_inativos():
+    usuarios = buscar_usuarios()
+    usuarios_inativos = [u for u in usuarios if u.ativo == "Inativo"]
+
+    return jsonify([
+        {
+            "nome": u.nome,
+            "email": u.email,
+            "cargo": u.cargo.value,
+            "ativo": u.ativo,
+            "logado": u.logado,
+            "data_criacao": u.data_criacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_criacao else None,
+            "data_atualizacao": u.data_atualizacao.strftime("%d/%m/%Y %H:%M:%S") if u.data_atualizacao else None,
+            **({"data_ultimo_login": u.data_ultimo_login.strftime("%d/%m/%Y %H:%M:%S")} if u.data_ultimo_login and not u.logado else {})
+        }
+        for u in usuarios_inativos
+    ])
+
 
 @usuario_bp.route("/usuarios/listar-nome-ou-email", methods=["GET"])
 def listar_por_nome_ou_email():
@@ -140,4 +165,24 @@ def atualizar_usuario():
         return jsonify({"message": "Usuário atualizado com sucesso!"}), 200
     else:
         return jsonify(response), status
+
+@usuario_bp.route("/usuarios/desativar", methods=["PATCH"])
+def desativar_usuario_por_email():
+    dados = request.json
+    email = dados.get("email")
+
+    if not email:
+        return jsonify({"error": "E-mail é obrigatório"}), 400
+
+    usuario = buscar_usuario_por_email(email)
+
+    if not usuario:
+        return jsonify({"error": "Usuário não encontrado"}), 404
+
+    usuario.ativo = "Inativo"
+    db.session.commit()
+
+    return jsonify({"message": f"Usuário {usuario.nome} desativado com sucesso!"}), 200
+
+
 
